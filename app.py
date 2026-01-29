@@ -1,61 +1,64 @@
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
+import easyocr
+import numpy as np
 
-st.set_page_config(page_title="AI Design Text Editor", layout="centered")
+st.set_page_config(page_title="AI Design OCR Editor", layout="centered")
 
-st.title("🖼️ AI Design Text Editor")
-st.write("Edit text on AI-generated designs (flyers, posters, banners)")
+st.title("🧠 AI Design Text Editor (OCR)")
+st.write("Edit text inside AI-generated designs using OCR")
 
 uploaded = st.file_uploader(
-    "Upload AI-generated design (PNG/JPG)", 
+    "Upload AI-generated image (PNG/JPG)",
     type=["png", "jpg", "jpeg"]
 )
 
 if uploaded:
-    image = Image.open(uploaded).convert("RGBA")
-    draw = ImageDraw.Draw(image)
+    image = Image.open(uploaded).convert("RGB")
+    img_np = np.array(image)
 
-    st.subheader("Text Replacement")
+    reader = easyocr.Reader(['en'], gpu=False)
+    results = reader.readtext(img_np)
 
-    old_text = st.text_input("Original text (for reference only)", "Zahra")
+    st.subheader("Detected Text")
+    detected_texts = [res[1] for res in results]
+    st.write(detected_texts)
+
+    target_text = st.text_input("Text to replace", "Zahra")
     new_text = st.text_input("New text", "Sofra")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        x = st.slider("Text X position", 0, image.width, int(image.width * 0.2))
-        y = st.slider("Text Y position", 0, image.height, int(image.height * 0.1))
-    with col2:
-        font_size = st.slider("Font size", 20, 150, 60)
-
-    bg_color = st.color_picker("Background cover color", "#000000")
-    text_color = st.color_picker("Text color", "#FFFFFF")
+    draw = ImageDraw.Draw(image)
 
     try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 40)
     except:
         font = ImageFont.load_default()
 
-    # Cover old text area (simple rectangle)
-    padding = 10
-    text_width, text_height = draw.textsize(old_text, font=font)
-    draw.rectangle(
-        [
-            x - padding,
-            y - padding,
-            x + text_width + padding,
-            y + text_height + padding
-        ],
-        fill=bg_color
-    )
+    replaced = False
 
-    # Draw new text
-    draw.text((x, y), new_text, fill=text_color, font=font)
+    for bbox, text, confidence in results:
+        if target_text.lower() in text.lower():
+            (top_left, top_right, bottom_right, bottom_left) = bbox
 
-    st.image(image, caption="Edited Design", use_container_width=True)
+            x1, y1 = map(int, top_left)
+            x2, y2 = map(int, bottom_right)
 
-    st.download_button(
-        "Download Updated Design",
-        data=image.tobytes(),
-        file_name="edited_design.png",
-        mime="image/png"
-    )
+            # cover old text
+            draw.rectangle([x1, y1, x2, y2], fill="black")
+
+            # write new text
+            draw.text((x1, y1), new_text, fill="white", font=font)
+
+            replaced = True
+
+    if replaced:
+        st.image(image, caption="Edited Design", use_container_width=True)
+
+        st.download_button(
+            "Download Updated Design",
+            data=image.tobytes(),
+            file_name="ocr_edited_design.png",
+            mime="image/png"
+        )
+    else:
+        st.warning("Target text not found. Try adjusting the text.")
